@@ -7,32 +7,27 @@ jobs:
   probe:
     runs-on: ubuntu-latest
     steps:
-      - name: Probe Tashma API endpoints
+      - name: Probe candidate endpoints
         env:
           API_KEY: ${{ secrets.KEY }}
         run: |
           set +e
           probe() {
-            local label="$1" url="$2"
-            echo "=== $label ==="
-            echo "URL: $url"
-            body=$(curl -sS -w '\n%{http_code}' -H "x-api-key: $API_KEY" "$url")
-            status=$(echo "$body" | tail -n1)
-            content=$(echo "$body" | sed '$d')
-            echo "HTTP status: $status"
-            echo "Body (first 500 chars):"
-            echo "$content" | head -c 500
-            echo
-            echo "Body length: $(echo -n "$content" | wc -c) bytes"
-            echo
+            local url="https://api.tashma.co.il$1"
+            body=$(curl -sS -m 20 -w '\n%{http_code}' -H "x-api-key: $API_KEY" "$url")
+            status=$(printf '%s' "$body" | tail -n1)
+            content=$(printf '%s' "$body" | sed '$d' | head -c 300)
+            len=$(printf '%s' "$body" | sed '$d' | wc -c)
+            echo "[$status] $1  (len=$len)"
+            echo "    $content"
           }
-          echo "Key present: $([ -n "$API_KEY" ] && echo yes || echo NO)"
-          echo "Key length: ${#API_KEY}"
-          echo
-          probe "List all rabanan"        "https://api.tashma.co.il/api/rabanan/"
-          probe "Single rav (id 1)"       "https://api.tashma.co.il/api/rabanan/1"
-          probe "Calendar dates"          "https://api.tashma.co.il/api/rabanan/calendar-dates"
-          probe "Undocumented root"       "https://api.tashma.co.il/api/"
-          probe "No-key control"          "https://api.tashma.co.il/api/rabanan/"
-          echo "=== No-key control (without header) ==="
-          curl -sS -o /dev/null -w 'HTTP status without key: %{http_code}\n' "https://api.tashma.co.il/api/rabanan/"
+          for p in \
+            /api/books /api/books/ /api/book /api/sefarim /api/seforim /api/sfarim \
+            /api/otzaria /api/otzaria/books /api/library /api/files /api/downloads \
+            /api/texts /api/documents /api/updates /api/releases /api/export \
+            /api/rabanan/updates /api/rabanan/version /api/rabanan/last-modified \
+            /api/version /api/status /api/me /api/scopes /api/keys/me ; do
+            probe "$p"
+          done
+          echo "--- HEAD request to check caching headers on rabanan list ---"
+          curl -sSI -H "x-api-key: $API_KEY" https://api.tashma.co.il/api/rabanan/ | head -30
