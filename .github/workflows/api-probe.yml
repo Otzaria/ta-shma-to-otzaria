@@ -6,40 +6,26 @@ on:
 jobs:
   probe:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
-      - name: Explore books and files endpoints
+      - name: Download one file with long timeout
         env:
           API_KEY: ${{ secrets.KEY }}
         run: |
           set +e
-          get() { curl -sS -m 30 -H "x-api-key: $API_KEY" "https://api.tashma.co.il$1"; }
-          stat() {
-            body=$(curl -sS -m 30 -w '\n%{http_code}' -H "x-api-key: $API_KEY" "https://api.tashma.co.il$1")
-            echo "[$(printf '%s' "$body" | tail -n1)] $1"
-            printf '%s' "$body" | sed '$d' | head -c 400; echo; echo
-          }
-          echo "=== Books list: total count and all distinct field names ==="
-          get /api/books > books.json
-          jq 'length' books.json
-          jq '[.[] | keys] | add | unique' books.json
-          echo
-          echo "=== Three full sample records (with sn) ==="
-          jq '[.[] | select(.sn != null)] | .[0:3]' books.json
-          echo
-          echo "=== A record with the most fields ==="
-          jq 'max_by(keys | length)' books.json
-          echo
-          echo "=== Distinct licenses / proofread values ==="
-          jq '[.[].license] | unique' books.json
-          jq '[.[].proofread] | unique' books.json
-          echo
-          SN=$(jq -r '[.[] | select(.sn != null)][0].sn' books.json)
-          NAME=$(jq -r '[.[] | select(.sn != null)][0].name' books.json)
-          echo "Testing files with SN=$SN NAME=$NAME"
-          ENC=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1]))" "$NAME")
-          stat "/api/files?SN=$SN&nameComonA1=$ENC"
-          stat "/api/files?sn=$SN&nameComonA1=$ENC"
-          stat "/api/files?SN=$SN&nameComonA1=$SN"
-          stat "/api/books/$SN"
-          stat "/api/files/$SN"
-          stat "/api/files?SN=$SN"
+          SN=19102
+          ENC=$(python3 -c "import urllib.parse; print(urllib.parse.quote('א טאג ביים רבין'))")
+          echo "=== GET /api/files?SN=$SN&nameComonA1=<book name>, 8 min timeout ==="
+          time curl -sS -m 480 -D headers.txt -o out.bin \
+            -H "x-api-key: $API_KEY" \
+            "https://api.tashma.co.il/api/files?SN=$SN&nameComonA1=$ENC"
+          echo "curl exit: $?"
+          echo "--- Response headers ---"
+          cat headers.txt
+          echo "--- File info ---"
+          ls -la out.bin
+          file out.bin
+          echo "--- First 800 bytes ---"
+          head -c 800 out.bin; echo
+          echo "--- If JSON, keys ---"
+          jq 'if type=="object" then keys elif type=="array" then [length, (.[0]|keys?)] else type end' out.bin 2>/dev/null || echo "(not json)"
