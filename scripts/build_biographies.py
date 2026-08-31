@@ -41,16 +41,25 @@ def get(path):
     raise RuntimeError(f"GET {path} failed after retries: {last_err}")
 
 
-def translation_text(entry):
-    """Best-effort extraction of display text from a translation entry."""
+def translation_text(entry, language="he"):
+    """Display text of a translation entry.
+
+    Shape: {"_id": ..., "category": ..., "translations": [{"language", "word"}]}
+    """
     if not isinstance(entry, dict):
         return None
-    for key in ("he", "name", "title", "text", "value", "label"):
-        v = entry.get(key)
-        if isinstance(v, dict):
-            v = v.get("he") or next((x for x in v.values() if isinstance(x, str)), None)
-        if isinstance(v, str) and v.strip():
-            return v.strip()
+    words = entry.get("translations")
+    if not isinstance(words, list):
+        return None
+    for want in (language, None):
+        for tr in words:
+            if not isinstance(tr, dict):
+                continue
+            if want is not None and tr.get("language") != want:
+                continue
+            word = tr.get("word")
+            if isinstance(word, str) and word.strip():
+                return word.strip()
     return None
 
 
