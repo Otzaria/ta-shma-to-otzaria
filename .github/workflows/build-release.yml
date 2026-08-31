@@ -1,0 +1,72 @@
+name: Build biographies release
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 3 */3 * *'
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      # GitHub משבית scheduled workflows אחרי 60 יום ללא פעילות בריפו;
+      # קריאת ה-enable מאפסת את הטיימר הזה בכל ריצה מתוזמנת.
+      - name: Keepalive
+        if: github.event_name == 'schedule'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow enable build-release.yml --repo "$GITHUB_REPOSITORY"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install requests
+
+      - name: Download previous data hash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download --repo "$GITHUB_REPOSITORY" \
+            --pattern biographies.sha256 --output previous.sha256 \
+            || echo "no-previous-release" > previous.sha256
+
+      - name: Build biographies file
+        env:
+          TASHMA_API_KEY: ${{ secrets.KEY }}
+          OBF_KEY: ${{ secrets.OBF_KEY }}
+        run: python scripts/build_biographies.py
+
+      - name: Check if data changed
+        id: check
+        run: |
+          new=$(cat out/biographies.sha256)
+          old=$(cat previous.sha256)
+          if [ "$new" = "$old" ]; then
+            echo "Data unchanged (hash $new)."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "Data changed: $old -> $new"
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "hash=$new" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create release
+        if: steps.check.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="bio-$(date -u +%Y%m%d-%H%M%S)"
+          gh release create "$tag" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "Biographies $tag" \
+            --notes "Automated biographies build. Data SHA-256: \`${{ steps.check.outputs.hash }}\`" \
+            out/biographies.tsb out/biographies.sha256
