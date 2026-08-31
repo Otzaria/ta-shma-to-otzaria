@@ -3,10 +3,11 @@ name: Build biographies release
 on:
   workflow_dispatch:
   schedule:
-    - cron: '17 3 * * *'
+    - cron: '17 3 */3 * *'
 
 permissions:
   contents: write
+  actions: write
 
 jobs:
   build:
@@ -14,6 +15,14 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
+
+      # GitHub משבית scheduled workflows אחרי 60 יום ללא פעילות בריפו;
+      # קריאת ה-enable מאפסת את הטיימר הזה בכל ריצה מתוזמנת.
+      - name: Keepalive
+        if: github.event_name == 'schedule'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow enable build-release.yml --repo "$GITHUB_REPOSITORY"
 
       - uses: actions/setup-python@v5
         with:
